@@ -12,7 +12,7 @@ export const useSyncFirebase = (roomId: string | null) => {
 
     const libRef = ref(db, `rooms/${roomId}/library`);
     const canvasRef = ref(db, `rooms/${roomId}/canvasObjects`);
-    const colorRef = ref(db, `rooms/${roomId}/canvasColor`);
+    const envRef = ref(db, `rooms/${roomId}/canvasEnv`);
 
     const unsubLib = onValue(libRef, (snapshot) => {
       const data = snapshot.val();
@@ -32,17 +32,17 @@ export const useSyncFirebase = (roomId: string | null) => {
       }
     });
 
-    const unsubColor = onValue(colorRef, (snapshot) => {
-      const color = snapshot.val();
-      if (color) {
-        useAppStore.setState({ canvasColor: color });
+    const unsubEnv = onValue(envRef, (snapshot) => {
+      const env = snapshot.val();
+      if (env) {
+        useAppStore.setState({ canvasEnv: env });
       }
     });
 
     return () => {
       off(libRef, 'value', unsubLib);
       off(canvasRef, 'value', unsubCanvas);
-      off(colorRef, 'value', unsubColor);
+      off(envRef, 'value', unsubEnv);
       useAppStore.setState({ roomId: null });
     };
   }, [roomId]);

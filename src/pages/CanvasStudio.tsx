@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import { Stage, Layer, Transformer, Image as KonvaImage, Rect } from 'react-konva';
+import { Stage, Layer, Transformer, Image as KonvaImage } from 'react-konva';
 import Konva from 'konva';
 import { useAppStore } from '../store/useAppStore';
 import type { CustomShape, CanvasObject } from '../store/useAppStore';
@@ -10,6 +10,7 @@ import useImage from 'use-image';
 import { EffectPanel } from '../components/EffectPanel';
 import { AlgorithmicBrushes } from '../components/AlgorithmicBrushes';
 import { ColorPicker } from '../components/ColorPicker';
+import BackgroundEngine from '../components/BackgroundEngine';
 
 // --- Shape Thumbnail (Sidebar) ---
 const ShapeThumbnail: React.FC<{ shape: CustomShape }> = ({ shape }) => {
@@ -178,23 +179,6 @@ const KonvaShapeComponent: React.FC<KonvaShapeProps> = ({ canvasObj, shape, onSe
   );
 };
 
-// --- Film Grain Overlay ---
-const FilmGrainOverlay: React.FC<{ width: number; height: number }> = ({ width, height }) => {
-  const noiseSvgUrl = useMemo(() => {
-    const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
-      <filter id="noise">
-        <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/>
-        <feColorMatrix type="matrix" values="1 0 0 0 0, 0 1 0 0 0, 0 0 1 0 0, 0 0 0 0.15 0" />
-      </filter>
-      <rect width="100%" height="100%" filter="url(#noise)"/>
-    </svg>`;
-    return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgStr)))}`;
-  }, [width, height]);
-
-  const [image] = useImage(noiseSvgUrl);
-  return <KonvaImage image={image} width={width} height={height} listening={false} globalCompositeOperation="soft-light" />;
-};
-
 // --- Main Studio ---
 const CanvasStudio: React.FC = () => {
   const library = useAppStore(state => state.library);
@@ -206,8 +190,8 @@ const CanvasStudio: React.FC = () => {
   const removeCanvasObject = useAppStore(state => state.removeCanvasObject);
   const setCanvasObjects = useAppStore(state => state.setCanvasObjects);
   
-  const canvasColor = useAppStore(state => state.canvasColor);
-  const setCanvasColor = useAppStore(state => state.setCanvasColor);
+  const canvasEnv = useAppStore(state => state.canvasEnv);
+  const setCanvasEnv = useAppStore(state => state.setCanvasEnv);
   
   const saveHistoryState = useAppStore(state => state.saveHistoryState);
   const undo = useAppStore(state => state.undo);
@@ -508,8 +492,7 @@ const CanvasStudio: React.FC = () => {
           {stageSize.width > 0 && (
             <Stage width={stageSize.width} height={stageSize.height} onMouseDown={checkDeselect} onTouchStart={checkDeselect} ref={stageRef}>
               <Layer ref={layerRef}>
-                {/* Background Rect to catch clicks */}
-                <Rect x={0} y={0} width={stageSize.width} height={stageSize.height} id="bg-rect" fill={canvasColor || '#0f0f13'} />
+                <BackgroundEngine width={stageSize.width} height={stageSize.height} env={canvasEnv} />
                 
                 {canvasObjects.map((obj) => {
                   const shapeDef = library.find(s => s.id === obj.shapeId);
@@ -541,9 +524,6 @@ const CanvasStudio: React.FC = () => {
                     anchorFill="#fff"
                   />
                 )}
-
-                {/* Global Film Grain */}
-                <FilmGrainOverlay width={stageSize.width} height={stageSize.height} />
               </Layer>
             </Stage>
           )}
@@ -619,18 +599,140 @@ const CanvasStudio: React.FC = () => {
           />
         </div>
       ) : (
-        <div className="w-80 bg-neutral-950 border-l border-neutral-800 p-6 flex flex-col z-20 shrink-0 max-h-full">
-          <h3 className="font-bold text-lg mb-6 shrink-0">Canvas Settings</h3>
-          <div className="mb-6 shrink-0">
+        <div className="w-80 bg-neutral-950 border-l border-neutral-800 p-6 flex flex-col z-20 shrink-0 overflow-y-auto">
+          <h3 className="font-bold text-lg mb-6 shrink-0">Environment Settings</h3>
+          
+          <div className="mb-6">
+            <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-3 block">Fill Mode</label>
+            <div className="grid grid-cols-2 gap-2">
+              {(['solid', 'linear', 'radial', 'holographic'] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setCanvasEnv({ ...canvasEnv, mode: m })}
+                  className={`py-1.5 px-2 rounded-md text-xs font-medium capitalize transition-colors border ${
+                    canvasEnv.mode === m 
+                      ? 'bg-blue-600/20 border-blue-500 text-blue-400' 
+                      : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-4 mb-6">
             <ColorPicker 
-              label="Background Color"
-              color={canvasColor || '#0f0f13'} 
-              onChange={setCanvasColor} 
+              label="Primary Color"
+              color={canvasEnv.colorA} 
+              onChange={(c) => setCanvasEnv({ ...canvasEnv, colorA: c })} 
             />
+            {canvasEnv.mode !== 'solid' && (
+              <ColorPicker 
+                label="Secondary Color"
+                color={canvasEnv.colorB} 
+                onChange={(c) => setCanvasEnv({ ...canvasEnv, colorB: c })} 
+              />
+            )}
           </div>
-          <div className="flex-1 flex items-center justify-center text-neutral-500 text-sm text-center">
-            Select a shape on the canvas to view and edit its properties.
+
+          <div className="w-full h-px bg-neutral-800 mb-6 shrink-0"></div>
+
+          <div className="mb-6">
+            <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-3 block">Pattern Overlay</label>
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              {(['none', 'grid', 'dots', 'topographic', 'starfield'] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setCanvasEnv({ ...canvasEnv, pattern: p })}
+                  className={`py-1.5 rounded-md text-[10px] font-medium capitalize transition-colors border ${
+                    canvasEnv.pattern === p 
+                      ? 'bg-blue-600/20 border-blue-500 text-blue-400' 
+                      : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+            {canvasEnv.pattern !== 'none' && (
+              <div>
+                <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-2 flex justify-between">
+                  <span>Pattern Opacity</span>
+                  <span className="text-white">{Math.round(canvasEnv.patternOpacity * 100)}%</span>
+                </label>
+                <input 
+                  type="range" min="0" max="1" step="0.05" 
+                  value={canvasEnv.patternOpacity} 
+                  onChange={(e) => setCanvasEnv({...canvasEnv, patternOpacity: parseFloat(e.target.value)})}
+                  className="w-full accent-blue-500"
+                />
+              </div>
+            )}
           </div>
+
+          <div className="w-full h-px bg-neutral-800 mb-6 shrink-0"></div>
+
+          <div className="mb-6">
+            <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-3 block">Post-Processing Texture</label>
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              {(['clean', 'grain', 'scanlines', 'halftone'] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setCanvasEnv({ ...canvasEnv, texture: t })}
+                  className={`py-1.5 px-2 rounded-md text-xs font-medium capitalize transition-colors border ${
+                    canvasEnv.texture === t 
+                      ? 'bg-blue-600/20 border-blue-500 text-blue-400' 
+                      : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+            {canvasEnv.texture !== 'clean' && (
+              <div>
+                <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-2 flex justify-between">
+                  <span>Intensity</span>
+                  <span className="text-white">{canvasEnv.textureIntensity.toFixed(2)}</span>
+                </label>
+                <input 
+                  type="range" min="0" max="2" step="0.05" 
+                  value={canvasEnv.textureIntensity} 
+                  onChange={(e) => setCanvasEnv({...canvasEnv, textureIntensity: parseFloat(e.target.value)})}
+                  className="w-full accent-blue-500"
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="mb-6 flex items-center justify-between">
+            <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider flex items-center gap-2">
+              Vignette
+            </label>
+            <button
+              onClick={() => setCanvasEnv({ ...canvasEnv, vignette: !canvasEnv.vignette })}
+              className={`w-12 h-6 rounded-full transition-colors relative ${canvasEnv.vignette ? 'bg-pink-500' : 'bg-neutral-800'}`}
+            >
+              <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-transform ${canvasEnv.vignette ? 'translate-x-7' : 'translate-x-1'}`}></div>
+            </button>
+          </div>
+
+          <div className="mb-6 flex items-center justify-between">
+            <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider flex items-center gap-2">
+              Audio Reactive
+            </label>
+            <button
+              onClick={() => {
+                if (!canvasEnv.audioReactive) handleEnableMic();
+                setCanvasEnv({ ...canvasEnv, audioReactive: !canvasEnv.audioReactive });
+              }}
+              className={`w-12 h-6 rounded-full transition-colors relative ${canvasEnv.audioReactive ? 'bg-pink-500' : 'bg-neutral-800'}`}
+            >
+              <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-transform ${canvasEnv.audioReactive ? 'translate-x-7' : 'translate-x-1'}`}></div>
+            </button>
+          </div>
+
         </div>
       )}
     </div>

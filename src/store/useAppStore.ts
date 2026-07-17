@@ -41,6 +41,18 @@ export interface CanvasObject {
   audioReactive?: boolean;
 }
 
+export interface CanvasEnvironment {
+  mode: 'solid' | 'linear' | 'radial' | 'holographic';
+  colorA: string;
+  colorB: string;
+  pattern: 'none' | 'grid' | 'dots' | 'topographic' | 'starfield';
+  patternOpacity: number;
+  texture: 'clean' | 'grain' | 'scanlines' | 'halftone';
+  textureIntensity: number;
+  vignette: boolean;
+  audioReactive: boolean;
+}
+
 interface AppState {
   roomId: string | null;
   setRoomId: (id: string | null) => void;
@@ -56,8 +68,8 @@ interface AppState {
   removeCanvasObject: (id: string) => void;
   setCanvasObjects: (objects: CanvasObject[]) => void;
 
-  canvasColor: string;
-  setCanvasColor: (color: string) => void;
+  canvasEnv: CanvasEnvironment;
+  setCanvasEnv: (env: CanvasEnvironment | ((prev: CanvasEnvironment) => CanvasEnvironment)) => void;
 
   savedSwatches: string[];
   addSavedSwatch: (color: string) => void;
@@ -132,13 +144,24 @@ export const useAppStore = create<AppState>()(
       }
     },
 
-    canvasColor: '#171717',
-    setCanvasColor: (color) => {
+    canvasEnv: {
+      mode: 'solid',
+      colorA: '#0f0f13',
+      colorB: '#1a1a2e',
+      pattern: 'none',
+      patternOpacity: 0.1,
+      texture: 'grain',
+      textureIntensity: 0.15,
+      vignette: true,
+      audioReactive: false,
+    },
+    setCanvasEnv: (envOrUpdater) => {
       const state = get();
+      const newEnv = typeof envOrUpdater === 'function' ? envOrUpdater(state.canvasEnv) : envOrUpdater;
       if (state.roomId) {
-        firebaseSet(ref(db, `rooms/${state.roomId}/canvasColor`), color);
+        firebaseSet(ref(db, `rooms/${state.roomId}/canvasEnv`), newEnv);
       } else {
-        set({ canvasColor: color });
+        set({ canvasEnv: newEnv });
       }
     },
 
