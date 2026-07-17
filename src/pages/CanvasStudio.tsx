@@ -9,6 +9,7 @@ import { createSVGDataUrl } from '../utils/svgGenerator';
 import useImage from 'use-image';
 import { EffectPanel } from '../components/EffectPanel';
 import { AlgorithmicBrushes } from '../components/AlgorithmicBrushes';
+import { ImageMosaicEngine } from '../components/ImageMosaicEngine';
 import { ColorPicker } from '../components/ColorPicker';
 import BackgroundEngine from '../components/BackgroundEngine';
 
@@ -229,6 +230,7 @@ const CanvasStudio: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectionRect, setSelectionRect] = useState({ visible: false, x1: 0, y1: 0, x2: 0, y2: 0 });
   
+  const [selectedLibraryShapeId, setSelectedLibraryShapeId] = useState<string | null>(null);
   const [draggedShapeId, setDraggedShapeId] = useState<string | null>(null);
   const [micEnabled, setMicEnabled] = useState(false);
 
@@ -608,7 +610,8 @@ const CanvasStudio: React.FC = () => {
                   key={shape.id} 
                   draggable
                   onDragStart={() => setDraggedShapeId(shape.id)}
-                  className="aspect-square bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAHUlEQVQ4jWNgYGAQIYAJwoz/4QUxKsCogEEDAwMA0xUB+6z+hZAAAAAASUVORK5CYII=')] rounded-lg border border-neutral-800 flex items-center justify-center p-2 cursor-grab active:cursor-grabbing hover:border-neutral-600 transition-colors relative group"
+                  onClick={() => setSelectedLibraryShapeId(shape.id)}
+                  className={`aspect-square bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAHUlEQVQ4jWNgYGAQIYAJwoz/4QUxKsCogEEDAwMA0xUB+6z+hZAAAAAASUVORK5CYII=')] rounded-lg flex items-center justify-center p-2 cursor-pointer active:cursor-grabbing relative group transition-all border-2 ${selectedLibraryShapeId === shape.id ? 'border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.3)]' : 'border-neutral-800 hover:border-neutral-600'}`}
                 >
                   <ShapeThumbnail shape={shape} />
                   
@@ -627,7 +630,13 @@ const CanvasStudio: React.FC = () => {
           <AlgorithmicBrushes 
             canvasWidth={stageSize.width} 
             canvasHeight={stageSize.height} 
-            selectedShapeId={selectedObj?.shapeId || null} 
+            selectedShapeId={selectedLibraryShapeId || selectedObj?.shapeId || null} 
+          />
+          
+          <ImageMosaicEngine 
+            canvasWidth={stageSize.width} 
+            canvasHeight={stageSize.height} 
+            selectedShapeId={selectedLibraryShapeId || selectedObj?.shapeId || null} 
           />
         </div>
       </div>
