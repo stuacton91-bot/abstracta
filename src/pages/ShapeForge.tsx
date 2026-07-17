@@ -23,6 +23,7 @@ const ShapeForge: React.FC = () => {
   
   const svgRef = useRef<SVGSVGElement>(null);
   const addShape = useAppStore(state => state.addShapeToLibrary);
+  const addSavedSwatch = useAppStore(state => state.addSavedSwatch);
   const navigate = useNavigate();
 
   const getCoordinates = (e: React.PointerEvent<SVGSVGElement>): Point | null => {
@@ -211,6 +212,8 @@ const ShapeForge: React.FC = () => {
           ...effect,
           colors: [colors[0], colors[1], colors[2], colors[0]] // padding to 4 stops for the 2D SVG
         });
+        // Save them to the Color System swatches
+        colors.forEach(c => addSavedSwatch(c));
       } else {
         alert("The AI returned an invalid format. Please try again.");
       }

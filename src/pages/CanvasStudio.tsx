@@ -213,6 +213,36 @@ const CanvasStudio: React.FC = () => {
   const [draggedShapeId, setDraggedShapeId] = useState<string | null>(null);
   const [micEnabled, setMicEnabled] = useState(false);
 
+  const [stageScale, setStageScale] = useState(1);
+  const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
+
+  const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
+    e.evt.preventDefault();
+    const stage = stageRef.current;
+    if (!stage) return;
+    
+    const scaleBy = 1.05;
+    const oldScale = stage.scaleX();
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return;
+
+    const mousePointTo = {
+      x: (pointer.x - stage.x()) / oldScale,
+      y: (pointer.y - stage.y()) / oldScale,
+    };
+
+    const newScale = e.evt.deltaY > 0 ? oldScale / scaleBy : oldScale * scaleBy;
+    
+    // limit scale
+    if (newScale > 10 || newScale < 0.1) return;
+
+    setStageScale(newScale);
+    setStagePos({
+      x: pointer.x - mousePointTo.x * newScale,
+      y: pointer.y - mousePointTo.y * newScale,
+    });
+  };
+
   const handleEnableMic = async () => {
     await audioAnalyzer.initialize();
     setMicEnabled(true);
@@ -490,7 +520,19 @@ const CanvasStudio: React.FC = () => {
 
         <div className="flex-1" ref={containerRef} onDrop={handleDrop} onDragOver={(e) => e.preventDefault()}>
           {stageSize.width > 0 && (
-            <Stage width={stageSize.width} height={stageSize.height} onMouseDown={checkDeselect} onTouchStart={checkDeselect} ref={stageRef}>
+            <Stage 
+              width={stageSize.width} 
+              height={stageSize.height} 
+              onMouseDown={checkDeselect} 
+              onTouchStart={checkDeselect} 
+              onWheel={handleWheel}
+              scaleX={stageScale}
+              scaleY={stageScale}
+              x={stagePos.x}
+              y={stagePos.y}
+              draggable // allows panning
+              ref={stageRef}
+            >
               <Layer ref={layerRef}>
                 <BackgroundEngine width={stageSize.width} height={stageSize.height} env={canvasEnv} />
                 
