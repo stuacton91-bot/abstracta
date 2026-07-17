@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import { Stage, Layer, Transformer, Image as KonvaImage } from 'react-konva';
+import { Stage, Layer, Transformer, Image as KonvaImage, Rect } from 'react-konva';
 import Konva from 'konva';
 import { useAppStore } from '../store/useAppStore';
 import type { CustomShape, CanvasObject } from '../store/useAppStore';
@@ -23,7 +23,7 @@ interface KonvaShapeProps {
   canvasObj: CanvasObject;
   shape: CustomShape;
   isSelected: boolean;
-  onSelect: () => void;
+  onSelect: (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => void;
   onChange: (newAttrs: Partial<CanvasObject>) => void;
 }
 
@@ -201,7 +201,7 @@ const CanvasStudio: React.FC = () => {
 
   const handleAddObj = (obj: CanvasObject) => { saveHistoryState(); addCanvasObject(obj); };
   const handleUpdateObj = (id: string, updates: Partial<CanvasObject>) => { saveHistoryState(); updateCanvasObject(id, updates); };
-  const handleRemoveObj = (id: string) => { saveHistoryState(); removeCanvasObject(id); };
+
   const handleSetAllObjs = (objs: CanvasObject[]) => { saveHistoryState(); setCanvasObjects(objs); };
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -209,12 +209,85 @@ const CanvasStudio: React.FC = () => {
   const trRef = useRef<Konva.Transformer>(null);
 
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectionRect, setSelectionRect] = useState({ visible: false, x1: 0, y1: 0, x2: 0, y2: 0 });
+  
   const [draggedShapeId, setDraggedShapeId] = useState<string | null>(null);
   const [micEnabled, setMicEnabled] = useState(false);
 
   const [stageScale, setStageScale] = useState(1);
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
+
+  const getRelativePointerPosition = (stage: Konva.Stage) => {
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return { x: 0, y: 0 };
+    const transform = stage.getAbsoluteTransform().copy();
+    transform.invert();
+    return transform.point(pointer);
+  };
+
+  const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+    const clickedOnEmpty = e.target === e.target.getStage() || e.target.id() === 'bg-rect' || e.target.id() === 'background-engine';
+    if (clickedOnEmpty) {
+      if (!e.evt.shiftKey) {
+        setSelectedIds([]);
+      }
+      const stage = e.target.getStage();
+      if (stage) {
+        const pos = getRelativePointerPosition(stage);
+        setSelectionRect({
+          visible: true,
+          x1: pos.x,
+          y1: pos.y,
+          x2: pos.x,
+          y2: pos.y,
+        });
+      }
+    }
+  };
+
+  const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+    if (!selectionRect.visible) return;
+    const stage = e.target.getStage();
+    if (stage) {
+      const pos = getRelativePointerPosition(stage);
+      setSelectionRect(prev => ({ ...prev, x2: pos.x, y2: pos.y }));
+    }
+  };
+
+  const handleMouseUp = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+    if (!selectionRect.visible) return;
+    setSelectionRect(prev => ({ ...prev, visible: false }));
+    
+    const box = {
+      x: Math.min(selectionRect.x1, selectionRect.x2),
+      y: Math.min(selectionRect.y1, selectionRect.y2),
+      width: Math.abs(selectionRect.x1 - selectionRect.x2),
+      height: Math.abs(selectionRect.y1 - selectionRect.y2),
+    };
+    
+    if (box.width < 5 || box.height < 5) return; // Ignore tiny accidental drags
+
+    const newSelectedIds = canvasObjects.filter(obj => {
+      const node = layerRef.current?.findOne(`#shape-${obj.id}`);
+      if (!node) return false;
+      const layer = stageRef.current?.getLayer();
+      const stageBox = node.getClientRect({ relativeTo: layer ? layer : undefined });
+      // Check intersection
+      return !(
+        stageBox.x > box.x + box.width ||
+        stageBox.x + stageBox.width < box.x ||
+        stageBox.y > box.y + box.height ||
+        stageBox.y + stageBox.height < box.y
+      );
+    }).map(obj => obj.id);
+
+    if (e.evt.shiftKey) {
+      setSelectedIds(prev => [...new Set([...prev, ...newSelectedIds])]);
+    } else {
+      setSelectedIds(newSelectedIds);
+    }
+  };
 
   const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault();
@@ -267,24 +340,44 @@ const CanvasStudio: React.FC = () => {
   // Safer transformer attachment
   const layerRef = useRef<Konva.Layer>(null);
   useEffect(() => {
-    if (selectedId && trRef.current && layerRef.current) {
-      const selectedNode = layerRef.current.findOne(`#shape-${selectedId}`);
-      if (selectedNode) {
-        trRef.current.nodes([selectedNode]);
-        trRef.current.getLayer()?.batchDraw();
-      }
+    if (selectedIds.length > 0 && trRef.current && layerRef.current) {
+      const nodes = selectedIds.map(id => layerRef.current?.findOne(`#shape-${id}`)).filter(Boolean) as Konva.Node[];
+      trRef.current.nodes(nodes);
+      trRef.current.getLayer()?.batchDraw();
     } else if (trRef.current) {
       trRef.current.nodes([]);
     }
-  }, [selectedId, canvasObjects]);
+  }, [selectedIds, canvasObjects]);
+
+  // Keyboard navigation for all selected
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (selectedIds.length === 0) return;
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        e.preventDefault();
+        const moveAmount = e.shiftKey ? 10 : 1;
+        saveHistoryState();
+        
+        selectedIds.forEach(id => {
+          const obj = canvasObjects.find(o => o.id === id);
+          if (!obj) return;
+          let newX = obj.x;
+          let newY = obj.y;
+          
+          if (e.key === 'ArrowUp') newY -= moveAmount;
+          if (e.key === 'ArrowDown') newY += moveAmount;
+          if (e.key === 'ArrowLeft') newX -= moveAmount;
+          if (e.key === 'ArrowRight') newX += moveAmount;
+          
+          updateCanvasObject(id, { x: newX, y: newY });
+        });
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedIds, canvasObjects, updateCanvasObject, saveHistoryState]);
 
 
-  const checkDeselect = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
-    const clickedOnEmpty = e.target === e.target.getStage() || e.target.attrs.id === 'bg-rect';
-    if (clickedOnEmpty) {
-      setSelectedId(null);
-    }
-  };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -302,15 +395,15 @@ const CanvasStudio: React.FC = () => {
         rotation: 0,
       };
       handleAddObj(newObj);
-      setSelectedId(newObj.id);
+      setSelectedIds([newObj.id]);
     }
     setDraggedShapeId(null);
   };
 
   const exportImage = () => {
     if (!stageRef.current) return;
-    const prevSelected = selectedId;
-    setSelectedId(null);
+    const prevSelected = selectedIds;
+    setSelectedIds([]);
     
     setTimeout(() => {
       const uri = stageRef.current!.toDataURL({ pixelRatio: 3, mimeType: 'image/png' });
@@ -320,68 +413,69 @@ const CanvasStudio: React.FC = () => {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      if (prevSelected) setSelectedId(prevSelected);
+      if (prevSelected) setSelectedIds(prevSelected);
     }, 100);
   };
 
-  const handleLayerMove = (direction: 'up' | 'down') => {
-    if (!selectedId) return;
-    const index = canvasObjects.findIndex(o => o.id === selectedId);
-    if (index === -1) return;
-    
-    const newObjects = [...canvasObjects];
-    if (direction === 'up' && index < newObjects.length - 1) {
-      [newObjects[index], newObjects[index + 1]] = [newObjects[index + 1], newObjects[index]];
-      handleSetAllObjs(newObjects);
-    } else if (direction === 'down' && index > 0) {
-      [newObjects[index], newObjects[index - 1]] = [newObjects[index - 1], newObjects[index]];
-      handleSetAllObjs(newObjects);
+  const handleLayerMove = (dir: 'up' | 'down') => {
+    if (selectedIds.length === 0) return;
+    // Layer move is tricky with multiple. For now, if single selected:
+    if (selectedIds.length === 1) {
+      const id = selectedIds[0];
+      const idx = canvasObjects.findIndex(o => o.id === id);
+      if (idx === -1) return;
+      saveHistoryState();
+      const newObjs = [...canvasObjects];
+      if (dir === 'up' && idx < newObjs.length - 1) {
+        const temp = newObjs[idx + 1];
+        newObjs[idx + 1] = newObjs[idx];
+        newObjs[idx] = temp;
+      } else if (dir === 'down' && idx > 0) {
+        const temp = newObjs[idx - 1];
+        newObjs[idx - 1] = newObjs[idx];
+        newObjs[idx] = temp;
+      }
+      setCanvasObjects(newObjs);
     }
   };
 
   const handleDuplicate = () => {
-    if (!selectedId) return;
-    const objToCopy = canvasObjects.find(o => o.id === selectedId);
-    if (objToCopy) {
-      const newObj = { ...objToCopy, id: crypto.randomUUID(), x: objToCopy.x + 40, y: objToCopy.y + 40 };
-      handleAddObj(newObj);
-      setSelectedId(newObj.id);
-    }
+    if (selectedIds.length === 0) return;
+    saveHistoryState();
+    const newIds: string[] = [];
+    selectedIds.forEach(id => {
+      const objToCopy = canvasObjects.find(o => o.id === id);
+      if (objToCopy) {
+        const newObj = { ...objToCopy, id: crypto.randomUUID(), x: objToCopy.x + 40, y: objToCopy.y + 40 };
+        addCanvasObject(newObj);
+        newIds.push(newObj.id);
+      }
+    });
+    setSelectedIds(newIds);
   };
 
   const handleDelete = () => {
-    if (!selectedId) return;
-    handleRemoveObj(selectedId);
-    setSelectedId(null);
+    if (selectedIds.length === 0) return;
+    saveHistoryState();
+    selectedIds.forEach(id => removeCanvasObject(id));
+    setSelectedIds([]);
   };
 
+  // Note: Keyboard navigation for Arrow keys is handled in the useEffect at line 352.
+  // We'll add Backspace/Delete handling there or here.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't intercept if user is typing in an input field (e.g. prompt)
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-
       if (e.key === 'Backspace' || e.key === 'Delete') {
         handleDelete();
-        return;
-      }
-
-      if (selectedId) {
-        const obj = canvasObjects.find(o => o.id === selectedId);
-        if (obj) {
-          const moveSpeed = e.shiftKey ? 10 : 1;
-          if (e.key === 'ArrowUp') handleUpdateObj(selectedId, { y: obj.y - moveSpeed });
-          if (e.key === 'ArrowDown') handleUpdateObj(selectedId, { y: obj.y + moveSpeed });
-          if (e.key === 'ArrowLeft') handleUpdateObj(selectedId, { x: obj.x - moveSpeed });
-          if (e.key === 'ArrowRight') handleUpdateObj(selectedId, { x: obj.x + moveSpeed });
-        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedId, canvasObjects, handleUpdateObj, handleDelete]);
+  }, [selectedIds, canvasObjects, handleDelete]);
 
-  const selectedObj = canvasObjects.find(o => o.id === selectedId);
-  const selectedShapeDef = selectedObj ? library.find(s => s.id === selectedObj.shapeId) : null;
+  const selectedObj = selectedIds.length > 0 ? canvasObjects.find(o => o.id === selectedIds[0]) : null;
+
 
   const handleExportProject = () => {
     const data = JSON.stringify({
@@ -494,7 +588,7 @@ const CanvasStudio: React.FC = () => {
           <button onClick={() => {
             if(window.confirm('Clear all shapes from the canvas?')) {
               handleSetAllObjs([]);
-              setSelectedId(null);
+              setSelectedIds([]);
             }
           }} className="p-2 text-red-500 hover:text-red-400" title="Clear Entire Canvas"><RotateCcw size={18} /></button>
           <div className="w-px h-6 bg-neutral-600 mx-1"></div>
@@ -509,11 +603,11 @@ const CanvasStudio: React.FC = () => {
           </button>
           
           <div className="w-px h-6 bg-neutral-600 mx-1"></div>
-          <button onClick={() => handleLayerMove('down')} disabled={!selectedId} className="p-2 text-neutral-400 hover:text-white disabled:opacity-30" title="Send Backward"><ArrowDown size={18} /></button>
-          <button onClick={() => handleLayerMove('up')} disabled={!selectedId} className="p-2 text-neutral-400 hover:text-white disabled:opacity-30" title="Bring Forward"><ArrowUp size={18} /></button>
+          <button onClick={() => handleLayerMove('down')} disabled={selectedIds.length === 0} className="p-2 text-neutral-400 hover:text-white disabled:opacity-30" title="Send Backward"><ArrowDown size={18} /></button>
+          <button onClick={() => handleLayerMove('up')} disabled={selectedIds.length === 0} className="p-2 text-neutral-400 hover:text-white disabled:opacity-30" title="Bring Forward"><ArrowUp size={18} /></button>
           <div className="w-px h-6 bg-neutral-600 mx-1"></div>
-          <button onClick={handleDuplicate} disabled={!selectedId} className="p-2 text-neutral-400 hover:text-white disabled:opacity-30" title="Duplicate"><Copy size={18} /></button>
-          <button onClick={handleDelete} disabled={!selectedId} className="p-2 text-red-400 hover:text-red-300 disabled:opacity-30" title="Delete Selected"><Trash2 size={18} /></button>
+          <button onClick={handleDuplicate} disabled={selectedIds.length === 0} className="p-2 text-neutral-400 hover:text-white disabled:opacity-30" title="Duplicate"><Copy size={18} /></button>
+          <button onClick={handleDelete} disabled={selectedIds.length === 0} className="p-2 text-red-400 hover:text-red-300 disabled:opacity-30" title="Delete Selected"><Trash2 size={18} /></button>
           <div className="w-px h-6 bg-neutral-600 mx-1"></div>
           <button onClick={exportImage} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded-full text-sm font-medium ml-2"><Download size={16} /> Export HD</button>
         </div>
@@ -523,14 +617,17 @@ const CanvasStudio: React.FC = () => {
             <Stage 
               width={stageSize.width} 
               height={stageSize.height} 
-              onMouseDown={checkDeselect} 
-              onTouchStart={checkDeselect} 
+              onMouseDown={handleMouseDown} 
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onTouchStart={handleMouseDown} 
+              onTouchMove={handleMouseMove}
+              onTouchEnd={handleMouseUp}
               onWheel={handleWheel}
               scaleX={stageScale}
               scaleY={stageScale}
               x={stagePos.x}
               y={stagePos.y}
-              draggable // allows panning
               ref={stageRef}
             >
               <Layer ref={layerRef}>
@@ -545,16 +642,21 @@ const CanvasStudio: React.FC = () => {
                       key={obj.id}
                       canvasObj={obj}
                       shape={shapeDef}
-                      isSelected={obj.id === selectedId}
-                      onSelect={() => setSelectedId(obj.id)}
+                      isSelected={selectedIds.includes(obj.id)}
+                      onSelect={(e) => {
+                        if (e.evt.shiftKey) {
+                          setSelectedIds(prev => prev.includes(obj.id) ? prev.filter(id => id !== obj.id) : [...prev, obj.id]);
+                        } else {
+                          setSelectedIds([obj.id]);
+                        }
+                      }}
                       onChange={(newAttrs) => handleUpdateObj(obj.id, newAttrs)}
                     />
                   );
                 })}
                 
                 {/* We need an ID on the rendered shape nodes for the transformer to find them */}
-                {/* I forgot to pass id to KonvaImage inside KonvaShapeComponent. Let's fix that. */}
-                {selectedId && (
+                {selectedIds.length > 0 && (
                   <Transformer 
                     ref={trRef}
                     boundBoxFunc={(oldBox, newBox) => {
@@ -566,6 +668,18 @@ const CanvasStudio: React.FC = () => {
                     anchorFill="#fff"
                   />
                 )}
+                {selectionRect.visible && (
+                  <Rect
+                    x={Math.min(selectionRect.x1, selectionRect.x2)}
+                    y={Math.min(selectionRect.y1, selectionRect.y2)}
+                    width={Math.abs(selectionRect.x1 - selectionRect.x2)}
+                    height={Math.abs(selectionRect.y1 - selectionRect.y2)}
+                    fill="rgba(59, 130, 246, 0.2)"
+                    stroke="#3b82f6"
+                    strokeWidth={1}
+                    listening={false}
+                  />
+                )}
               </Layer>
             </Stage>
           )}
@@ -573,21 +687,35 @@ const CanvasStudio: React.FC = () => {
       </div>
 
       {/* Properties Sidebar (Live Editing) */}
-      {selectedId && selectedObj && selectedShapeDef ? (
+      {selectedIds.length > 0 ? (
         <div className="w-80 bg-neutral-950 border-l border-neutral-800 p-6 flex flex-col z-20 shrink-0 max-h-full">
-          <h3 className="font-bold text-lg mb-6 shrink-0">Properties</h3>
+          <h3 className="font-bold text-lg mb-6 shrink-0">
+            {selectedIds.length === 1 ? 'Properties' : `${selectedIds.length} Items Selected`}
+          </h3>
           
           <div className="mb-6 shrink-0">
             <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-3 block">Orientation</label>
             <div className="grid grid-cols-2 gap-2">
               <button 
-                onClick={() => handleUpdateObj(selectedId, { scaleX: selectedObj.scaleX * -1 })}
+                onClick={() => {
+                  saveHistoryState();
+                  selectedIds.forEach(id => {
+                    const obj = canvasObjects.find(o => o.id === id);
+                    if (obj) updateCanvasObject(id, { scaleX: obj.scaleX * -1 });
+                  });
+                }}
                 className="py-2 bg-neutral-900 border border-neutral-800 rounded-md hover:bg-neutral-800 transition-colors flex items-center justify-center gap-2 text-sm"
               >
                 <FlipHorizontal size={16} /> Flip X
               </button>
               <button 
-                onClick={() => handleUpdateObj(selectedId, { scaleY: selectedObj.scaleY * -1 })}
+                onClick={() => {
+                  saveHistoryState();
+                  selectedIds.forEach(id => {
+                    const obj = canvasObjects.find(o => o.id === id);
+                    if (obj) updateCanvasObject(id, { scaleY: obj.scaleY * -1 });
+                  });
+                }}
                 className="py-2 bg-neutral-900 border border-neutral-800 rounded-md hover:bg-neutral-800 transition-colors flex items-center justify-center gap-2 text-sm"
               >
                 <FlipVertical size={16} /> Flip Y
@@ -602,19 +730,26 @@ const CanvasStudio: React.FC = () => {
               <Activity size={14} /> Behavior (Physics)
             </label>
             <div className="grid grid-cols-2 gap-2">
-              {(['none', 'float', 'pulse', 'spin', 'orbit'] as const).map((b) => (
-                <button
-                  key={b}
-                  onClick={() => handleUpdateObj(selectedId, { behavior: b })}
-                  className={`py-2 border rounded-md text-sm capitalize transition-colors ${
-                    (selectedObj.behavior || 'none') === b 
-                      ? 'bg-blue-600 border-blue-500 text-white' 
-                      : 'bg-neutral-900 border-neutral-800 hover:bg-neutral-800 text-neutral-400'
-                  }`}
-                >
-                  {b}
-                </button>
-              ))}
+              {(['none', 'float', 'pulse', 'spin', 'orbit'] as const).map((b) => {
+                const firstObj = canvasObjects.find(o => o.id === selectedIds[0]);
+                const isActive = firstObj?.behavior === b;
+                return (
+                  <button
+                    key={b}
+                    onClick={() => {
+                      saveHistoryState();
+                      selectedIds.forEach(id => updateCanvasObject(id, { behavior: b }));
+                    }}
+                    className={`py-2 border rounded-md text-sm capitalize transition-colors ${
+                      isActive 
+                        ? 'bg-blue-600 border-blue-500 text-white' 
+                        : 'bg-neutral-900 border-neutral-800 hover:bg-neutral-800 text-neutral-400'
+                    }`}
+                  >
+                    {b}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -624,19 +759,31 @@ const CanvasStudio: React.FC = () => {
             <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider flex items-center gap-2">
               <Mic size={14} /> React to Sound
             </label>
-            <button
-              onClick={() => handleUpdateObj(selectedId, { audioReactive: !selectedObj.audioReactive })}
-              className={`w-12 h-6 rounded-full transition-colors relative ${selectedObj.audioReactive ? 'bg-pink-500' : 'bg-neutral-800'}`}
-            >
-              <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-transform ${selectedObj.audioReactive ? 'translate-x-7' : 'translate-x-1'}`}></div>
-            </button>
+            {(() => {
+              const firstObj = canvasObjects.find(o => o.id === selectedIds[0]);
+              const isReactive = firstObj?.audioReactive || false;
+              return (
+                <button
+                  onClick={() => {
+                    saveHistoryState();
+                    selectedIds.forEach(id => updateCanvasObject(id, { audioReactive: !isReactive }));
+                  }}
+                  className={`w-12 h-6 rounded-full transition-colors relative ${isReactive ? 'bg-pink-500' : 'bg-neutral-800'}`}
+                >
+                  <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-transform ${isReactive ? 'translate-x-7' : 'translate-x-1'}`}></div>
+                </button>
+              );
+            })()}
           </div>
 
           <div className="w-full h-px bg-neutral-800 mb-6 shrink-0"></div>
 
           <EffectPanel 
-            effect={selectedObj.overrideEffect || selectedShapeDef.effect} 
-            onChange={(newEffect) => handleUpdateObj(selectedId, { overrideEffect: newEffect })} 
+            effect={canvasObjects.find(o => o.id === selectedIds[0])?.overrideEffect || library.find(s => s.id === canvasObjects.find(o => o.id === selectedIds[0])?.shapeId)?.effect!} 
+            onChange={(newEffect) => {
+              saveHistoryState();
+              selectedIds.forEach(id => updateCanvasObject(id, { overrideEffect: newEffect }));
+            }} 
             className="flex-1"
           />
         </div>
