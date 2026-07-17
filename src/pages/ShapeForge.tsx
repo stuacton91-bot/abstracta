@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import type { Point, ShapeEffect } from '../store/useAppStore';
-import { RefreshCw, CheckCircle2, Hexagon, Star, Sparkles, Droplets, Wand2 } from 'lucide-react';
+import { RefreshCw, CheckCircle2, Hexagon, Star, Sparkles, Droplets, Wand2, Pencil, Move, Settings, Cloud, Infinity as InfinityIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getShapeSvgAttributes, generatePathString } from '../utils/svgGenerator';
 import { palettes } from '../store/palettes';
@@ -14,6 +14,10 @@ const ShapeForge: React.FC = () => {
   const [symmetry, setSymmetry] = useState(1);
   const [prompt, setPrompt] = useState('');
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+  
+  const [tool, setTool] = useState<'draw' | 'transform'>('draw');
+  const [lastPos, setLastPos] = useState<Point | null>(null);
+
   const [effect, setEffect] = useState<ShapeEffect>({
     type: 'aberration',
     colors: palettes[0].meshStops,
@@ -40,15 +44,21 @@ const ShapeForge: React.FC = () => {
     (e.target as Element).releasePointerCapture(e.pointerId);
     const coords = getCoordinates(e);
     if (coords) {
-      setPoints([coords]);
-      setIsDrawing(true);
+      if (tool === 'draw') {
+        setPoints([coords]);
+        setIsDrawing(true);
+      } else {
+        setLastPos(coords);
+        setIsDrawing(false);
+      }
     }
   };
 
   const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (!isDrawing) return;
     const coords = getCoordinates(e);
-    if (coords) {
+    if (!coords) return;
+
+    if (tool === 'draw' && isDrawing) {
       setPoints((prev) => {
         const last = prev[prev.length - 1];
         if (last) {
@@ -58,11 +68,16 @@ const ShapeForge: React.FC = () => {
         }
         return [...prev, coords];
       });
+    } else if (tool === 'transform' && lastPos && e.buttons > 0) {
+      const dx = coords.x - lastPos.x;
+      const dy = coords.y - lastPos.y;
+      setPoints(prev => prev.map(p => p.x === -999999 ? p : { x: p.x + dx, y: p.y + dy }));
+      setLastPos(coords);
     }
   };
 
   const handlePointerUp = () => {
-    if (isDrawing) {
+    if (tool === 'draw' && isDrawing) {
       setIsDrawing(false);
       if (symmetry > 1 && points.length > 2) {
         const newPts: Point[] = [];
@@ -72,6 +87,7 @@ const ShapeForge: React.FC = () => {
           const sin = Math.sin(angle);
           
           points.forEach(p => {
+            if (p.x === -999999) return;
             const tx = p.x - cx;
             const ty = p.y - cy;
             const rx = tx * cos - ty * sin;
@@ -82,7 +98,37 @@ const ShapeForge: React.FC = () => {
         }
         setPoints(newPts);
       }
+    } else if (tool === 'transform') {
+      setLastPos(null);
     }
+  };
+
+  const handleWheel = (e: React.WheelEvent<SVGSVGElement>) => {
+    if (points.length === 0) return;
+    e.preventDefault();
+    
+    // Find center of points
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    points.forEach(p => {
+      if (p.x === -999999 || p.y === -999999) return;
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    });
+    const cxObj = (minX + maxX) / 2;
+    const cyObj = (minY + maxY) / 2;
+
+    const scaleBy = 1.05;
+    const scale = e.deltaY > 0 ? 1 / scaleBy : scaleBy;
+
+    setPoints(prev => prev.map(p => {
+      if (p.x === -999999 || p.y === -999999) return p;
+      return {
+        x: cxObj + (p.x - cxObj) * scale,
+        y: cyObj + (p.y - cyObj) * scale
+      };
+    }));
   };
 
   const clearCanvas = () => {
@@ -175,6 +221,76 @@ const ShapeForge: React.FC = () => {
     setIsDrawing(false);
   };
 
+  const handleGenerateSpiral = () => {
+    const pts: Point[] = [];
+    const segments = 150;
+    const turns = 3;
+    for (let i = 0; i < segments; i++) {
+      const angle = (i / segments) * turns * 2 * Math.PI;
+      const radius = 10 + (i / segments) * 100;
+      pts.push({ x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius });
+    }
+    const backPts: Point[] = [];
+    for (let i = segments - 1; i >= 0; i--) {
+      const angle = (i / segments) * turns * 2 * Math.PI;
+      const radius = 10 + (i / segments) * 100 - 15; // 15px thickness
+      if(radius > 0) {
+        backPts.push({ x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius });
+      }
+    }
+    setPoints([...pts, ...backPts]);
+    setIsDrawing(false);
+  };
+
+  const handleGenerateInfinity = () => {
+    const pts: Point[] = [];
+    const segments = 100;
+    const a = 120;
+    for (let i = 0; i < segments; i++) {
+      const t = (i / segments) * 2 * Math.PI;
+      const denom = 1 + Math.sin(t) * Math.sin(t);
+      const x = (a * Math.sqrt(2) * Math.cos(t)) / denom;
+      const y = (a * Math.sqrt(2) * Math.cos(t) * Math.sin(t)) / denom;
+      pts.push({ x: cx + x, y: cy + y });
+    }
+    setPoints(pts);
+    setIsDrawing(false);
+  };
+
+  const handleGenerateGear = (teeth: number) => {
+    const pts: Point[] = [];
+    const segments = teeth * 4;
+    const outerRadius = 110;
+    const innerRadius = 80;
+    for(let i=0; i<segments; i++) {
+      const angle = (i / segments) * 2 * Math.PI;
+      const phase = i % 4;
+      const radius = (phase === 0 || phase === 1) ? outerRadius : innerRadius;
+      pts.push({ x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius });
+    }
+    setPoints(pts);
+    setIsDrawing(false);
+  };
+  
+  const handleGenerateCloud = () => {
+    const pts: Point[] = [];
+    const numBumps = 6;
+    const segmentsPerBump = 20;
+    const baseRadius = 80;
+    for(let b=0; b<numBumps; b++) {
+      const baseAngle = (b / numBumps) * 2 * Math.PI;
+      const bumpSize = 30 + Math.random() * 20;
+      for(let s=0; s<segmentsPerBump; s++) {
+        const t = s / segmentsPerBump;
+        const bumpAngle = baseAngle + t * (2 * Math.PI / numBumps);
+        const bumpRadius = baseRadius + Math.sin(t * Math.PI) * bumpSize;
+        pts.push({ x: cx + Math.cos(bumpAngle) * bumpRadius, y: cy + Math.sin(bumpAngle) * bumpRadius });
+      }
+    }
+    setPoints(pts);
+    setIsDrawing(false);
+  };
+
   const handleGenerateAIPalette = async () => {
     if (!prompt.trim() || isGeneratingAI) return;
     
@@ -234,8 +350,25 @@ const ShapeForge: React.FC = () => {
     <div className="flex flex-col md:flex-row min-h-full md:h-full w-full bg-neutral-900 text-white overflow-y-auto md:overflow-hidden">
       {/* Main Drawing Area */}
       <div className="w-full shrink-0 md:flex-1 relative flex flex-col items-center justify-center p-4 min-h-[400px] md:min-h-0">
-        <h2 className="absolute top-4 text-neutral-500 font-medium text-sm text-center">
-          {points.length === 0 ? "Draw a closed shape with your finger or mouse" : "Shape Forge"}
+        
+        {/* Tool Toggle */}
+        <div className="absolute top-4 z-20 flex bg-neutral-900 border border-neutral-800 rounded-lg p-1">
+          <button 
+            onClick={() => setTool('draw')}
+            className={`px-4 py-2 rounded-md flex items-center gap-2 text-sm font-medium transition-colors ${tool === 'draw' ? 'bg-blue-600 text-white' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+          >
+            <Pencil size={16} /> Draw
+          </button>
+          <button 
+            onClick={() => setTool('transform')}
+            className={`px-4 py-2 rounded-md flex items-center gap-2 text-sm font-medium transition-colors ${tool === 'transform' ? 'bg-blue-600 text-white' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+          >
+            <Move size={16} /> Transform
+          </button>
+        </div>
+
+        <h2 className="absolute top-20 text-neutral-500 font-medium text-sm text-center">
+          {points.length === 0 ? "Draw a closed shape with your finger or mouse" : tool === 'transform' ? "Drag to move • Scroll to resize" : "Shape Forge"}
         </h2>
         
         {/* Drawing Canvas */}
@@ -250,11 +383,12 @@ const ShapeForge: React.FC = () => {
 
           <svg
             ref={svgRef}
-            className="w-full h-full cursor-crosshair relative z-10"
+            className={`w-full h-full relative z-10 ${tool === 'draw' ? 'cursor-crosshair' : 'cursor-move'}`}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerLeave={handlePointerUp}
+            onWheel={handleWheel}
           >
             {/* Inject complex SVG filters natively! */}
             <defs dangerouslySetInnerHTML={{ __html: svgAttrs.defs }} />
@@ -288,18 +422,42 @@ const ShapeForge: React.FC = () => {
       {/* Effects Panel */}
       <div className="w-full md:w-80 bg-neutral-950 border-t md:border-t-0 md:border-l border-neutral-800 p-6 flex flex-col shrink-0 md:overflow-y-auto">
         <h3 className="font-bold text-lg mb-4 shrink-0">Generative Tools</h3>
-        <div className="grid grid-cols-2 gap-2 mb-6 shrink-0">
-          <button onClick={() => handleGeneratePolygon(6)} className="bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 text-neutral-300 py-2 rounded-md text-xs font-bold flex flex-col items-center gap-1 transition-colors">
-            <Hexagon size={16} /> Hexagon
+        <div className="grid grid-cols-3 gap-2 mb-6 shrink-0">
+          <button onClick={() => handleGeneratePolygon(3)} className="bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 text-neutral-300 py-2 rounded-md text-[10px] font-bold flex flex-col items-center gap-1 transition-colors">
+            <Hexagon size={14} /> Triangle
           </button>
-          <button onClick={() => handleGenerateStar(5)} className="bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 text-neutral-300 py-2 rounded-md text-xs font-bold flex flex-col items-center gap-1 transition-colors">
-            <Star size={16} /> 5-Point Star
+          <button onClick={() => handleGeneratePolygon(5)} className="bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 text-neutral-300 py-2 rounded-md text-[10px] font-bold flex flex-col items-center gap-1 transition-colors">
+            <Hexagon size={14} /> Pentagon
           </button>
-          <button onClick={() => handleGenerateWaveRing()} className="bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 text-neutral-300 py-2 rounded-md text-xs font-bold flex flex-col items-center gap-1 transition-colors">
-            <Sparkles size={16} /> Wave Ring
+          <button onClick={() => handleGeneratePolygon(6)} className="bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 text-neutral-300 py-2 rounded-md text-[10px] font-bold flex flex-col items-center gap-1 transition-colors">
+            <Hexagon size={14} /> Hexagon
           </button>
-          <button onClick={handleGenerateBlob} className="bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 text-neutral-300 py-2 rounded-md text-xs font-bold flex flex-col items-center gap-1 transition-colors">
-            <Droplets size={16} /> Organic Blob
+          
+          <button onClick={() => handleGenerateStar(5)} className="bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 text-neutral-300 py-2 rounded-md text-[10px] font-bold flex flex-col items-center gap-1 transition-colors">
+            <Star size={14} /> 5-Pt Star
+          </button>
+          <button onClick={() => handleGenerateStar(8)} className="bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 text-neutral-300 py-2 rounded-md text-[10px] font-bold flex flex-col items-center gap-1 transition-colors">
+            <Star size={14} /> 8-Pt Burst
+          </button>
+          <button onClick={() => handleGenerateGear(8)} className="bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 text-neutral-300 py-2 rounded-md text-[10px] font-bold flex flex-col items-center gap-1 transition-colors">
+            <Settings size={14} /> Gear
+          </button>
+
+          <button onClick={handleGenerateBlob} className="bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 text-neutral-300 py-2 rounded-md text-[10px] font-bold flex flex-col items-center gap-1 transition-colors">
+            <Droplets size={14} /> Blob
+          </button>
+          <button onClick={handleGenerateCloud} className="bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 text-neutral-300 py-2 rounded-md text-[10px] font-bold flex flex-col items-center gap-1 transition-colors">
+            <Cloud size={14} /> Cloud
+          </button>
+          <button onClick={handleGenerateWaveRing} className="bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 text-neutral-300 py-2 rounded-md text-[10px] font-bold flex flex-col items-center gap-1 transition-colors">
+            <Sparkles size={14} /> Wave
+          </button>
+
+          <button onClick={handleGenerateSpiral} className="bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 text-neutral-300 py-2 rounded-md text-[10px] font-bold flex flex-col items-center gap-1 transition-colors">
+            <RefreshCw size={14} /> Spiral
+          </button>
+          <button onClick={handleGenerateInfinity} className="bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 text-neutral-300 py-2 rounded-md text-[10px] font-bold flex flex-col items-center gap-1 transition-colors">
+            <InfinityIcon size={14} /> Infinity
           </button>
         </div>
 
