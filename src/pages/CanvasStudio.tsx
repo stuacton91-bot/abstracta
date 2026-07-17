@@ -9,6 +9,7 @@ import { createSVGDataUrl } from '../utils/svgGenerator';
 import useImage from 'use-image';
 import { EffectPanel } from '../components/EffectPanel';
 import { AlgorithmicBrushes } from '../components/AlgorithmicBrushes';
+import { ColorPicker } from '../components/ColorPicker';
 
 // --- Shape Thumbnail (Sidebar) ---
 const ShapeThumbnail: React.FC<{ shape: CustomShape }> = ({ shape }) => {
@@ -342,11 +343,28 @@ const CanvasStudio: React.FC = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Backspace' || e.key === 'Delete') handleDelete();
+      // Don't intercept if user is typing in an input field (e.g. prompt)
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        handleDelete();
+        return;
+      }
+
+      if (selectedId) {
+        const obj = canvasObjects.find(o => o.id === selectedId);
+        if (obj) {
+          const moveSpeed = e.shiftKey ? 10 : 1;
+          if (e.key === 'ArrowUp') handleUpdateObj(selectedId, { y: obj.y - moveSpeed });
+          if (e.key === 'ArrowDown') handleUpdateObj(selectedId, { y: obj.y + moveSpeed });
+          if (e.key === 'ArrowLeft') handleUpdateObj(selectedId, { x: obj.x - moveSpeed });
+          if (e.key === 'ArrowRight') handleUpdateObj(selectedId, { x: obj.x + moveSpeed });
+        }
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedId]);
+  }, [selectedId, canvasObjects, handleUpdateObj, handleDelete]);
 
   const selectedObj = canvasObjects.find(o => o.id === selectedId);
   const selectedShapeDef = selectedObj ? library.find(s => s.id === selectedObj.shapeId) : null;
@@ -604,12 +622,10 @@ const CanvasStudio: React.FC = () => {
         <div className="w-80 bg-neutral-950 border-l border-neutral-800 p-6 flex flex-col z-20 shrink-0 max-h-full">
           <h3 className="font-bold text-lg mb-6 shrink-0">Canvas Settings</h3>
           <div className="mb-6 shrink-0">
-            <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-3 block">Background Color</label>
-            <input 
-              type="color" 
-              value={canvasColor || '#0f0f13'} 
-              onChange={(e) => setCanvasColor(e.target.value)}
-              className="w-full h-10 rounded cursor-pointer"
+            <ColorPicker 
+              label="Background Color"
+              color={canvasColor || '#0f0f13'} 
+              onChange={setCanvasColor} 
             />
           </div>
           <div className="flex-1 flex items-center justify-center text-neutral-500 text-sm text-center">

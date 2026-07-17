@@ -1,6 +1,7 @@
 import React from 'react';
 import type { ShapeEffect, EffectType } from '../store/useAppStore';
 import { palettes } from '../store/palettes';
+import { ColorPicker } from './ColorPicker';
 
 export const effectTypes: EffectType[] = [
   'glass', 'mesh', 'holographic', 'noise', 
@@ -50,6 +51,25 @@ export const EffectPanel: React.FC<EffectPanelProps> = ({ effect, onChange, clas
             onChange={(e) => onChange({...effect, intensity: parseFloat(e.target.value)})}
             className="w-full accent-blue-500"
           />
+        </div>
+      )}
+
+      {/* Color Selectors */}
+      {effect.type !== 'glass' && (
+        <div className="space-y-4">
+          <ColorPicker 
+            label="Base Color"
+            color={effect.colors[0] || '#ffffff'} 
+            onChange={(c) => onChange({ ...effect, colors: [c, effect.colors[1] || '#aaaaaa', effect.colors[2] || c, effect.colors[3] || c] })} 
+          />
+          
+          {['holographic', 'liquid', 'duotone', 'mesh'].includes(effect.type) && (
+            <ColorPicker 
+              label="Secondary Color"
+              color={effect.colors[1] || '#aaaaaa'} 
+              onChange={(c) => onChange({ ...effect, colors: [effect.colors[0] || '#ffffff', c, effect.colors[2] || c, effect.colors[3] || c] })} 
+            />
+          )}
         </div>
       )}
 

@@ -59,6 +59,9 @@ interface AppState {
   canvasColor: string;
   setCanvasColor: (color: string) => void;
 
+  savedSwatches: string[];
+  addSavedSwatch: (color: string) => void;
+
   history: CanvasObject[][];
   future: CanvasObject[][];
   saveHistoryState: () => void;
@@ -138,6 +141,11 @@ export const useAppStore = create<AppState>()(
         set({ canvasColor: color });
       }
     },
+
+    savedSwatches: [],
+    addSavedSwatch: (color) => set((state) => ({ 
+      savedSwatches: [...new Set([color, ...state.savedSwatches])].slice(0, 10) 
+    })),
 
     history: [],
     future: [],

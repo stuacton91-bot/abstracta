@@ -98,11 +98,63 @@ export const palettes: PaletteDef[] = [
     colors: [
       { hex: "#5500ff", oklch: "oklch(50% 0.25 280)", role: "dominant" },
       { hex: "#ffaa00", oklch: "oklch(80% 0.16 75)", role: "supporting" },
-      { hex: "#00ff88", oklch: "oklch(85% 0.18 160)", role: "supporting" },
-      { hex: "#ff00ff", oklch: "oklch(65% 0.25 315)", role: "accent" },
+      { hex: "#ff00aa", oklch: "oklch(60% 0.25 340)", role: "supporting" },
+      { hex: "#00ffaa", oklch: "oklch(85% 0.15 160)", role: "accent" },
       { hex: "#f0e6ff", oklch: "oklch(96% 0.02 280)", role: "neutral" }
     ],
-    meshStops: ["#3300cc", "#5500ff", "#9933ff", "#cc66ff"]
+    meshStops: ["#2a0080", "#5500ff", "#ff00aa", "#ffaa00"]
+  },
+  {
+    name: "Vaporwave Dream",
+    mood: "nostalgic digital",
+    harmony: "analogous",
+    colors: [
+      { hex: "#ff71ce", oklch: "oklch(70% 0.20 340)", role: "dominant" },
+      { hex: "#01cdfe", oklch: "oklch(75% 0.15 220)", role: "supporting" },
+      { hex: "#05ffa1", oklch: "oklch(85% 0.18 160)", role: "supporting" },
+      { hex: "#b967ff", oklch: "oklch(65% 0.22 300)", role: "accent" },
+      { hex: "#fffb96", oklch: "oklch(95% 0.10 100)", role: "neutral" }
+    ],
+    meshStops: ["#b967ff", "#ff71ce", "#01cdfe", "#05ffa1"]
+  },
+  {
+    name: "Autumn Ember",
+    mood: "warm earthy",
+    harmony: "monochrome",
+    colors: [
+      { hex: "#8c2108", oklch: "oklch(40% 0.15 40)", role: "dominant" },
+      { hex: "#d94b18", oklch: "oklch(60% 0.18 45)", role: "supporting" },
+      { hex: "#f2a03d", oklch: "oklch(80% 0.14 65)", role: "supporting" },
+      { hex: "#f2cf63", oklch: "oklch(90% 0.10 85)", role: "accent" },
+      { hex: "#401c13", oklch: "oklch(20% 0.05 40)", role: "neutral" }
+    ],
+    meshStops: ["#401c13", "#8c2108", "#d94b18", "#f2a03d"]
+  },
+  {
+    name: "Arctic Glaciers",
+    mood: "crisp cold",
+    harmony: "analogous",
+    colors: [
+      { hex: "#004b73", oklch: "oklch(40% 0.10 240)", role: "dominant" },
+      { hex: "#007ea7", oklch: "oklch(60% 0.12 230)", role: "supporting" },
+      { hex: "#00a8cc", oklch: "oklch(75% 0.14 220)", role: "supporting" },
+      { hex: "#80dfff", oklch: "oklch(90% 0.08 210)", role: "accent" },
+      { hex: "#e6ffff", oklch: "oklch(98% 0.02 210)", role: "neutral" }
+    ],
+    meshStops: ["#004b73", "#007ea7", "#00a8cc", "#80dfff"]
+  },
+  {
+    name: "Toxic Waste",
+    mood: "acidic grunge",
+    harmony: "complementary",
+    colors: [
+      { hex: "#00ff00", oklch: "oklch(85% 0.25 140)", role: "dominant" },
+      { hex: "#88ff00", oklch: "oklch(90% 0.20 120)", role: "supporting" },
+      { hex: "#ff00ff", oklch: "oklch(65% 0.25 330)", role: "accent" },
+      { hex: "#330033", oklch: "oklch(20% 0.10 330)", role: "neutral" },
+      { hex: "#003300", oklch: "oklch(20% 0.10 140)", role: "neutral" }
+    ],
+    meshStops: ["#330033", "#ff00ff", "#00ff00", "#88ff00"]
   },
   {
     name: "Radioactive",

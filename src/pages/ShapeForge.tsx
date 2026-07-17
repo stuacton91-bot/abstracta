@@ -6,12 +6,14 @@ import { useNavigate } from 'react-router-dom';
 import { getShapeSvgAttributes, generatePathString } from '../utils/svgGenerator';
 import { palettes } from '../store/palettes';
 import { EffectPanel } from '../components/EffectPanel';
+import { GoogleGenAI } from '@google/genai';
 
 const ShapeForge: React.FC = () => {
   const [points, setPoints] = useState<Point[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const [symmetry, setSymmetry] = useState(1);
   const [prompt, setPrompt] = useState('');
+  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [effect, setEffect] = useState<ShapeEffect>({
     type: 'aberration',
     colors: palettes[0].meshStops,
@@ -172,35 +174,52 @@ const ShapeForge: React.FC = () => {
     setIsDrawing(false);
   };
 
-  const handleGenerateAIPalette = () => {
-    if (!prompt.trim()) return;
+  const handleGenerateAIPalette = async () => {
+    if (!prompt.trim() || isGeneratingAI) return;
     
-    // Deterministic hash string -> number
-    let hash = 0;
-    for (let i = 0; i < prompt.length; i++) {
-      hash = prompt.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    
-    // Generate OKLCH values based on hash
-    // Lightness 0.6-0.8, Chroma 0.15-0.3, Hue 0-360
-    const h1 = Math.abs(hash % 360);
-    const h2 = (h1 + 120 + (hash % 30)) % 360; // Triadic ish
-    const h3 = (h1 + 240 - (hash % 30)) % 360;
-    
-    const l1 = 0.6 + (Math.abs(hash) % 20) / 100;
-    const l2 = 0.6 + (Math.abs(hash >> 1) % 20) / 100;
-    const l3 = 0.6 + (Math.abs(hash >> 2) % 20) / 100;
+    setIsGeneratingAI(true);
+    try {
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      if (!apiKey) {
+        alert("Gemini API key is missing. Please add VITE_GEMINI_API_KEY to your .env file.");
+        setIsGeneratingAI(false);
+        return;
+      }
 
-    const c1 = 0.15 + (Math.abs(hash >> 3) % 15) / 100;
-    
-    setEffect({
-      ...effect,
-      colors: [
-        `oklch(${l1} ${c1} ${h1})`,
-        `oklch(${l2} ${c1} ${h2})`,
-        `oklch(${l3} ${c1} ${h3})`
-      ]
-    });
+      const ai = new GoogleGenAI({ apiKey });
+      const systemInstruction = `You are a world-class color theorist and designer. The user will give you a mood or prompt. You must reply with exactly three highly aesthetic, mathematically harmonious HEX color codes (e.g. #ff0055) that perfectly match their prompt. Return ONLY a valid JSON array of 3 strings. Example: ["#FF0055", "#00F0FF", "#39FF14"]`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+          systemInstruction,
+          responseMimeType: "application/json",
+        }
+      });
+
+      const text = response.text || "[]";
+      let colors: string[] = [];
+      try {
+        colors = JSON.parse(text);
+      } catch (e) {
+        console.error("Failed to parse Gemini response:", text);
+      }
+
+      if (Array.isArray(colors) && colors.length >= 3) {
+        setEffect({
+          ...effect,
+          colors: [colors[0], colors[1], colors[2], colors[0]] // padding to 4 stops for the 2D SVG
+        });
+      } else {
+        alert("The AI returned an invalid format. Please try again.");
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Error generating AI palette. See console for details.");
+    } finally {
+      setIsGeneratingAI(false);
+    }
   };
 
   // Live SVG attributes
@@ -310,9 +329,10 @@ const ShapeForge: React.FC = () => {
             />
             <button 
               onClick={handleGenerateAIPalette}
-              className="bg-neutral-800 hover:bg-neutral-700 text-white px-3 py-2 rounded-md transition-colors"
+              disabled={isGeneratingAI}
+              className="bg-neutral-800 hover:bg-neutral-700 disabled:opacity-50 text-white px-3 py-2 rounded-md transition-colors"
             >
-              Go
+              {isGeneratingAI ? '...' : 'Go'}
             </button>
           </div>
         </div>
