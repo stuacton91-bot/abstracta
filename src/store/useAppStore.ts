@@ -79,10 +79,16 @@ interface AppState {
   saveHistoryState: () => void;
   undo: () => void;
   redo: () => void;
+
+  performanceMode: 'high_quality' | 'performance';
+  setPerformanceMode: (mode: 'high_quality' | 'performance') => void;
 }
 
 export const useAppStore = create<AppState>()(
   (set, get) => ({
+    performanceMode: 'high_quality',
+    setPerformanceMode: (mode) => set({ performanceMode: mode }),
+
     roomId: null,
     setRoomId: (id) => set({ roomId: id }),
 

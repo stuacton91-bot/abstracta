@@ -3,7 +3,7 @@ import { Stage, Layer, Transformer, Image as KonvaImage, Rect } from 'react-konv
 import Konva from 'konva';
 import { useAppStore } from '../store/useAppStore';
 import type { CustomShape, CanvasObject } from '../store/useAppStore';
-import { Trash2, Download, ArrowUp, ArrowDown, Copy, FlipHorizontal, FlipVertical, RotateCcw, Upload, Save, Activity, Mic, MicOff, Undo2, Redo2 } from 'lucide-react';
+import { Trash2, Download, ArrowUp, ArrowDown, Copy, FlipHorizontal, FlipVertical, RotateCcw, Upload, Save, Activity, Mic, MicOff, Undo2, Redo2, Zap } from 'lucide-react';
 import { audioAnalyzer } from '../lib/audioAnalyzer';
 import { createSVGDataUrl } from '../utils/svgGenerator';
 import useImage from 'use-image';
@@ -25,9 +25,10 @@ interface KonvaShapeProps {
   isSelected: boolean;
   onSelect: (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => void;
   onChange: (newAttrs: Partial<CanvasObject>) => void;
+  performanceMode: 'high_quality' | 'performance';
 }
 
-const KonvaShapeComponent: React.FC<KonvaShapeProps> = ({ canvasObj, shape, onSelect, onChange }) => {
+const KonvaShapeComponent: React.FC<KonvaShapeProps> = ({ canvasObj, shape, onSelect, onChange, performanceMode }) => {
   const shapeRef = useRef<Konva.Image>(null);
   
   const effectiveShape = useMemo(() => ({
@@ -124,6 +125,19 @@ const KonvaShapeComponent: React.FC<KonvaShapeProps> = ({ canvasObj, shape, onSe
     };
   }, [canvasObj.behavior, canvasObj.x, canvasObj.y, canvasObj.scaleX, canvasObj.scaleY, canvasObj.rotation, canvasObj.id]);
 
+  useEffect(() => {
+    if (!shapeRef.current || !image) return;
+    if (performanceMode === 'performance') {
+      // Allow a tiny delay for image to map to Konva canvas internally before caching
+      const t = setTimeout(() => {
+        shapeRef.current?.cache({ pixelRatio: window.devicePixelRatio || 2 });
+      }, 50);
+      return () => clearTimeout(t);
+    } else {
+      shapeRef.current.clearCache();
+    }
+  }, [performanceMode, image, effectiveShape]);
+
   return (
     <KonvaImage
       id={`shape-${canvasObj.id}`}
@@ -199,6 +213,9 @@ const CanvasStudio: React.FC = () => {
   const history = useAppStore(state => state.history);
   const future = useAppStore(state => state.future);
 
+  const performanceMode = useAppStore(state => state.performanceMode);
+  const setPerformanceMode = useAppStore(state => state.setPerformanceMode);
+
   const handleAddObj = (obj: CanvasObject) => { saveHistoryState(); addCanvasObject(obj); };
   const handleUpdateObj = (id: string, updates: Partial<CanvasObject>) => { saveHistoryState(); updateCanvasObject(id, updates); };
 
@@ -217,6 +234,43 @@ const CanvasStudio: React.FC = () => {
 
   const [stageScale, setStageScale] = useState(1);
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
+
+  const [fps, setFps] = useState(60);
+
+  // Auto-detect FPS loop
+  useEffect(() => {
+    let frameCount = 0;
+    let lastTime = performance.now();
+    let poorFpsCount = 0;
+    let reqId: number;
+
+    const loop = (time: number) => {
+      frameCount++;
+      const delta = time - lastTime;
+      if (delta >= 1000) {
+        const currentFps = (frameCount * 1000) / delta;
+        setFps(Math.round(currentFps));
+        
+        if (currentFps < 30) {
+          poorFpsCount++;
+        } else {
+          poorFpsCount = 0;
+        }
+
+        if (poorFpsCount >= 3 && useAppStore.getState().performanceMode !== 'performance') {
+          useAppStore.getState().setPerformanceMode('performance');
+          console.warn("Auto-switched to Performance Mode due to low FPS");
+          poorFpsCount = 0;
+        }
+
+        frameCount = 0;
+        lastTime = time;
+      }
+      reqId = requestAnimationFrame(loop);
+    };
+    reqId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(reqId);
+  }, []);
 
   const getRelativePointerPosition = (stage: Konva.Stage) => {
     const pointer = stage.getPointerPosition();
@@ -630,8 +684,10 @@ const CanvasStudio: React.FC = () => {
               y={stagePos.y}
               ref={stageRef}
             >
+              <Layer listening={false}>
+                <BackgroundEngine width={stageSize.width} height={stageSize.height} env={canvasEnv} performanceMode={performanceMode} />
+              </Layer>
               <Layer ref={layerRef}>
-                <BackgroundEngine width={stageSize.width} height={stageSize.height} env={canvasEnv} />
                 
                 {canvasObjects.map((obj) => {
                   const shapeDef = library.find(s => s.id === obj.shapeId);
@@ -651,6 +707,7 @@ const CanvasStudio: React.FC = () => {
                         }
                       }}
                       onChange={(newAttrs) => handleUpdateObj(obj.id, newAttrs)}
+                      performanceMode={performanceMode}
                     />
                   );
                 })}
@@ -922,6 +979,39 @@ const CanvasStudio: React.FC = () => {
             </button>
           </div>
 
+          <div className="w-full h-px bg-neutral-800 mb-6 shrink-0"></div>
+
+          <div className="mb-6">
+            <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-3 flex items-center justify-between">
+              <span className="flex items-center gap-2"><Zap size={14} /> Performance Mode</span>
+              <span className="text-[10px] bg-neutral-800 px-1.5 py-0.5 rounded text-neutral-400">{fps} FPS</span>
+            </label>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPerformanceMode('high_quality')}
+                className={`flex-1 py-2 rounded-md text-xs font-medium transition-colors border ${
+                  performanceMode === 'high_quality' 
+                    ? 'bg-blue-600/20 border-blue-500 text-blue-400' 
+                    : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'
+                }`}
+              >
+                High Quality
+              </button>
+              <button
+                onClick={() => setPerformanceMode('performance')}
+                className={`flex-1 py-2 rounded-md text-xs font-medium transition-colors border ${
+                  performanceMode === 'performance' 
+                    ? 'bg-green-600/20 border-green-500 text-green-400' 
+                    : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-800'
+                }`}
+              >
+                Optimized
+              </button>
+            </div>
+            <p className="text-[10px] text-neutral-500 mt-2 leading-tight">
+              Optimized mode caches vectors to bitmaps and reduces texture noise octaves for low-end GPUs.
+            </p>
+          </div>
         </div>
       )}
     </div>

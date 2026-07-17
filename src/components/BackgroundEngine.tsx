@@ -9,9 +9,10 @@ interface BackgroundEngineProps {
   width: number;
   height: number;
   env: CanvasEnvironment;
+  performanceMode?: 'high_quality' | 'performance';
 }
 
-const BackgroundEngine: React.FC<BackgroundEngineProps> = ({ width, height, env }) => {
+const BackgroundEngine: React.FC<BackgroundEngineProps> = ({ width, height, env, performanceMode = 'high_quality' }) => {
   const groupRef = useRef<Konva.Group>(null);
   const vignetteRef = useRef<Konva.Rect>(null);
 
@@ -75,9 +76,10 @@ const BackgroundEngine: React.FC<BackgroundEngineProps> = ({ width, height, env 
     }
     else if (env.pattern === 'topographic') {
       // Procedural SVG filter for topographic lines
+      const octaves = performanceMode === 'performance' ? "1" : "3";
       svgContent = `
         <filter id="topo">
-          <feTurbulence type="fractalNoise" baseFrequency="0.015" numOctaves="3" result="noise" />
+          <feTurbulence type="fractalNoise" baseFrequency="0.015" numOctaves="${octaves}" result="noise" />
           <feColorMatrix type="matrix" values="1 0 0 0 0, 0 1 0 0 0, 0 0 1 0 0, 0 0 0 20 -9" result="highContrast" />
           <feComponentTransfer><feFuncA type="table" tableValues="1 0 1 0 1 0 1 0 1" /></feComponentTransfer>
         </filter>
@@ -106,8 +108,9 @@ const BackgroundEngine: React.FC<BackgroundEngineProps> = ({ width, height, env 
     let filterContent = '';
 
     if (env.texture === 'grain') {
+      const octaves = performanceMode === 'performance' ? "1" : "3";
       filterContent = `
-        <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/>
+        <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="${octaves}" stitchTiles="stitch"/>
         <feColorMatrix type="matrix" values="1 0 0 0 0, 0 1 0 0 0, 0 0 1 0 0, 0 0 0 ${env.textureIntensity} 0" />
       `;
     } 
